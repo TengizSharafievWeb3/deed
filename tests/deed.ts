@@ -110,6 +110,37 @@ describe('deed', () => {
         beneficiary: beneficiary.publicKey,
       })
       .signers([lawyer])
-      .rpc()).to.be.rejectedWith(/too early/);
+      .rpc()).to.be.rejectedWith(/Too early/);
+  });
+
+  it('Should NOT withdraw non laywer', async() => {
+    const deed = web3.Keypair.generate();
+    await program.methods
+      .initialize(lawyer.publicKey, beneficiary.publicKey, new anchor.BN(1), new anchor.BN(web3.LAMPORTS_PER_SOL))
+      .accounts({deed: deed.publicKey})
+      .signers([deed])
+      .rpc();
+    const deedBalance = await provider.connection.getBalance(deed.publicKey);
+    expect(deedBalance).to.be.equal(web3.LAMPORTS_PER_SOL);
+
+    const fake = web3.Keypair.generate();
+    await expect(program.methods
+      .withdraw()
+      .accounts({
+        deed: deed.publicKey,
+        lawyer: fake.publicKey,
+        beneficiary: beneficiary.publicKey,
+      })
+      .signers([lawyer])
+      .rpc()).to.be.rejected;
+  });
+
+  it('Should NOT init with amount less rent_exempt', async() => {
+    const deed = web3.Keypair.generate();
+    await expect(program.methods
+      .initialize(lawyer.publicKey, beneficiary.publicKey, new anchor.BN(1), new anchor.BN(1))
+      .accounts({deed: deed.publicKey})
+      .signers([deed])
+      .rpc()).to.be.rejectedWith(/Amount should be more than rent exempt/);
   });
 });

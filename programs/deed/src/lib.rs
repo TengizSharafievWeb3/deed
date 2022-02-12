@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     clock::Clock,
     system_instruction,
+    rent::Rent,
 };
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
@@ -10,6 +11,9 @@ declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 pub mod deed {
     use super::*;
     pub fn initialize(ctx: Context<Initialize>, lawyer: Pubkey, beneficiary: Pubkey, from_now: u64, amount: u64) -> ProgramResult {
+        let rent_exempt = Rent::get()?.minimum_balance(DEED_SIZE);
+        require!(amount > rent_exempt, DeedError::AmountLessThanRentExempt);
+
         {
             let deed = &mut ctx.accounts.deed;
             deed.lawyer = lawyer;
@@ -17,17 +21,12 @@ pub mod deed {
             deed.earliest = (Clock::get()?.unix_timestamp).saturating_add(from_now as i64);
         }
 
-        let deed_lamport = ctx.accounts.deed.to_account_info().lamports();
-
-        if deed_lamport < amount
-        {
-            let ix = system_instruction::transfer(&ctx.accounts.user.key(), &ctx.accounts.deed.key(), amount - deed_lamport);
-            anchor_lang::solana_program::program::invoke(
-                &ix, &[
-                    ctx.accounts.user.to_account_info(),
-                    ctx.accounts.deed.to_account_info(),
-            ])?;
-        }
+        let ix = system_instruction::transfer(&ctx.accounts.user.key(), &ctx.accounts.deed.key(), amount - rent_exempt);
+        anchor_lang::solana_program::program::invoke(
+            &ix, &[
+                ctx.accounts.user.to_account_info(),
+                ctx.accounts.deed.to_account_info(),
+        ])?;
 
         Ok(())
     }
@@ -57,6 +56,8 @@ pub struct Withdraw<'info> {
     pub system_program: Program<'info, System>,
 }
 
+const DEED_SIZE : usize = 32 + 32 + 8 + 8;
+
 #[account]
 #[derive(Default)]
 pub struct Deed {
@@ -67,6 +68,8 @@ pub struct Deed {
 
 #[error]
 pub enum DeedError {
-    #[msg("too early")]
-    TooEarly
+    #[msg("Too early")]
+    TooEarly,
+    #[msg("Amount should be more than rent exempt")]
+    AmountLessThanRentExempt
 }
